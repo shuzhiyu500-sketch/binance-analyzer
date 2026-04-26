@@ -102,4 +102,138 @@ COINS.forEach(c => {
       btn.classList.remove("active");
     } else {
       selected.push(c.symbol);
-      btn.classList.ad
+      btn.classList.add("active");
+    }
+  };
+  btnsEl.appendChild(btn);
+});
+
+function setStatus(msg) {
+  const el = document.getElementById("status");
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+function fmt(n, d = 2) {
+  return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function pct(n) {
+  return (Number(n) >= 0 ? "+" : "") + Number(n).toFixed(2) + "%";
+}
+
+async function fetchData() {
+  if (selected.length === 0) return;
+  fetched = false;
+  document.getElementById("analyzeBtn").disabled = true;
+  document.getElementById("tickers").innerHTML = "";
+  document.getElementById("analysisBox").style.display = "none";
+  setStatus("正在从币安读取行情数据...");
+
+  try {
+    const symsParam = encodeURIComponent(JSON.stringify(selected));
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${symsParam}`);
+    tickers = await res.json();
+
+    setStatus("正在读取K线数据...");
+    klines = {};
+    await Promise.all(selected.map(async sym => {
+      const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=1d&limit=7`);
+      const data = await r.json();
+      klines[sym] = data.map(k => ({
+        date: new Date(k[0]).toLocaleDateString("zh-CN"),
+        open: Number(k[1]).toFixed(2),
+        high: Number(k[2]).toFixed(2),
+        low: Number(k[3]).toFixed(2),
+        close: Number(k[4]).toFixed(2),
+        vol: Number(k[5]).toFixed(2),
+      }));
+    }));
+
+    // 渲染行情卡片
+    const tickersEl = document.getElementById("tickers");
+    tickers.forEach(t => {
+      const coin = COINS.find(c => c.symbol === t.symbol);
+      const isUp = Number(t.priceChangePercent) >= 0;
+      tickersEl.innerHTML += `
+        <div class="ticker-card">
+          <div style="display:flex;justify-content:space-between">
+            <span class="ticker-label">${coin?.label}</span>
+            <span class="ticker-name">${coin?.name}</span>
+          </div>
+          <div class="ticker-price">${fmt(t.lastPrice)}</div>
+          <div class="ticker-change ${isUp ? 'up' : 'down'}">${pct(t.priceChangePercent)}</div>
+          <div class="ticker-range">高 ${fmt(t.highPrice)} · 低 ${fmt(t.lowPrice)}</div>
+        </div>`;
+    });
+
+    fetched = true;
+    document.getElementById("analyzeBtn").disabled = false;
+    setStatus("数据读取完成，点击「开始分析」让Claude解读");
+  } catch (e) {
+    setStatus("数据读取失败，请检查网络或VPN");
+  }
+}
+
+async function analyze() {
+  const apiKey = document.getElementById("apiKey").value.trim();
+  if (!apiKey) { setStatus("请先填入Claude API Key"); return; }
+  if (!fetched) return;
+
+  document.getElementById("analyzeBtn").disabled = true;
+  document.getElementById("analysisBox").style.display = "none";
+  setStatus("Claude正在分析中...");
+
+  const dataText = tickers.map(t => {
+    const coin = COINS.find(c => c.symbol === t.symbol);
+    const k = klines[t.symbol] || [];
+    return `【${coin?.name}（${coin?.label}）】
+当前价格：${fmt(t.lastPrice)} USDT
+24小时涨跌：${pct(t.priceChangePercent)}
+24小时最高：${fmt(t.highPrice)}
+24小时最低：${fmt(t.lowPrice)}
+24小时成交量：${fmt(t.volume, 0)} ${coin?.label}
+近7日K线：
+${k.map(d => `  ${d.date} 开${d.open} 高${d.high} 低${d.low} 收${d.close}`).join("\n")}`;
+  }).join("\n\n");
+
+  const prompt = `你是加密货币市场分析助手，以下是币安实时数据，请用简洁中文分析：
+
+${dataText}
+
+请分析：
+1. 整体市场情绪
+2. 各币种当前状态（强势/弱势/震荡）
+3. 近7日趋势判断
+4. 值得关注的异常信号
+5. 新手操作建议1-2条
+
+语气简洁，不要废话。`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    const data = await res.json();
+    const text = data.content?.map(b => b.text || "").join("") || "分析失败";
+    document.getElementById("analysisBody").textContent = text;
+    document.getElementById("analysisBox").style.display = "block";
+    setStatus("分析完成");
+  } catch (e) {
+    setStatus("分析请求失败，请重试");
+  }
+  document.getElementById("analyzeBtn").disabled = false;
+}
+</script>
+</body>
+</html>
