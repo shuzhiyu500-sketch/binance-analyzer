@@ -1,2 +1,19 @@
-# binance-analyzer
-币安行情分析工具 - Binance market analysis tool
+# 线上男装针织热销选品雷达
+
+本仓库当前的 V1 目标是：在**获得授权或明确允许的公开数据源**中，持续发现男装羊毛衫／针织衫的热销和增长款，并把商品与图片证据沉淀为可复核的选品池。
+
+第一阶段的调研结论、数据契约、评分模型及最小采集方案见：
+
+- [《线上男装针织热销选品雷达 V1 方案》](docs/selection-radar-v1.md)
+
+> 不绕过登录、验证码、访问控制或反爬措施；没有取得数据源许可前，不启用自动采集。
+
+## V1.1：可运行的人工导入闭环
+
+当前没有提交任何淘宝/天猫或京东授权接口凭证，因此仓库只提供合规的人工导入模式，不含网页采集器。将真实、可追溯的授权 API 导出或人工核验数据填入 `data/manual_import_template.csv`（至少 30 个商品；不要填造数据），再运行：
+
+```bash
+python3 scripts/run_selection_radar.py --input /path/to/real-products.csv
+```
+
+支持 UTF-8 CSV 和 JSON；Excel 请先另存为 UTF-8 CSV。程序会保留输入文件副本与 SQLite 历史观测，并生成可直接打开的 `output/selection_pool.html`、选品 CSV、标准化数据、历史观测、图片索引、评分结果与数据质量报告。若不足 30 个真实商品或没有相隔 24 小时的第二次观察，页面和报告会明确显示 `BLOCKED`，不会伪造评分增长结论。
